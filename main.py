@@ -27,11 +27,13 @@ from PyQt5.QtGui import (
 from PyQt5.QtWidgets import (
     QApplication,
     QMainWindow,
+    QMenu,
     QWidget,
     QLabel,
+    QAction,
     QHBoxLayout,
     QPlainTextEdit,
-    QFileDialog
+    QFileDialog,
 )
 
 
@@ -43,9 +45,10 @@ AUTHOR = "~ Dzakanov Inshoofi - F1D02310110 ~"
 SUPPORTED_FILES = "Markdown Files (*.md);;Text Files (*.txt);;All Files (*.*)"
 
 STYLESHEET = """
-QMenu, QWidget, QMenuBar, QMenuBar:item {
+QMenu, QWidget, QMenuBar, QMenuBar:item, QListView {
     color: #E1E4DA;
     background: #191D17;
+    padding: 6px;
 }
 
 QMenu {
@@ -57,7 +60,7 @@ QMenu:item:disabled {
     color: #43483F;
 }
 
-QMenuBar:item:selected, QMenu:item:selected {
+QMenuBar:item:selected, QMenu:item:selected, QListView:item:selected {
     background: #363A34;
 }
 
@@ -108,7 +111,6 @@ class EditorHistoryDatabase:
                 name TEXT NOT NULL,
                 path TEXT NOT NULL,
                 lastAccessed DATETIME NOT NULL,
-                lastCursorIndex INT NOT NULL,
                 isInUse INT NOT NULL
             );
             """
@@ -120,7 +122,7 @@ class EditorHistoryDatabase:
     def openFile(self, path):
         now = QDateTime.currentDateTime().toString(Qt.ISODate)
 
-        fileQuery = QSqlQuery(f"SELECT id FROM File WHERE path = {path}")
+        fileQuery = QSqlQuery(f"SELECT id FROM File WHERE path = '{path}'")
         if fileQuery.next():
             id = fileQuery.value(0)
             updateQuery = QSqlQuery("""
@@ -136,14 +138,21 @@ class EditorHistoryDatabase:
             insertQuery = QSqlQuery("""
                 INSERT INTO File (name, path, lastAccessed, isInUse)
                 VALUES
-                (?, ?, ?, 1, 1)
+                (?, ?, ?, ?)
                 """)
             name = path.split("/")
             name = name[-1]
             insertQuery.addBindValue(name)
             insertQuery.addBindValue(path)
             insertQuery.addBindValue(now)
+            insertQuery.addBindValue(1)
             insertQuery.exec()
+
+        self.openFileModel.setQuery(self.SELECT_OPEN_FILE_QUERY)
+
+    def clearHistory(self):
+        deleteQuery = QSqlQuery("DELETE FROM File")
+        deleteQuery.exec()
 
         self.openFileModel.setQuery(self.SELECT_OPEN_FILE_QUERY)
 
@@ -152,8 +161,13 @@ class EditorHistoryDatabase:
         deleteQuery.addBindValue(path)
         deleteQuery.exec()
 
+        self.openFileModel.setQuery(self.SELECT_OPEN_FILE_QUERY)
+
     def closeFile(self, path):
-        fileQuery = QSqlQuery(f"SELECT id FROM File WHERE path = {path}")
+        if path is None:
+            return
+
+        fileQuery = QSqlQuery(f"SELECT id FROM File WHERE path = '{path}'")
         if fileQuery.next():
             id = fileQuery.value(0)
             updateQuery = QSqlQuery("""
@@ -206,8 +220,7 @@ class EditorTextLineNumber(QWidget):
 
             block = block.next()
             top = bottom
-            bottom = top + \
-                qRound(self.edit.blockBoundingRect(block).height())
+            bottom = top + qRound(self.edit.blockBoundingRect(block).height())
             blockNumber += 1
 
         p.end()
@@ -248,6 +261,10 @@ class EditorTextArea(QWidget):
 
 
 class EditorMainWindow(QMainWindow):
+    FORMAT_BOLD = 0
+    FORMAT_ITALIC = 1
+    FORMAT_STROKE = 2
+
     def __init__(self):
         super().__init__()
         self.currentFile = None
@@ -257,17 +274,25 @@ class EditorMainWindow(QMainWindow):
 
         self.splitter.setSizes([80, 320, 320])
 
-        self.fileViewer.setModel(self.db.openFileModel)
         self.statusBar().addPermanentWidget(QLabel(AUTHOR))
         self.textEditor.contentUpdated.connect(self.editorUpdated)
 
+        # File View Config
+        self.fileViewer.setModel(self.db.openFileModel)
         self.fileViewer.clicked.connect(self.fileSelectedOnView)
+        self.fileViewer.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu)
+        self.fileViewer.customContextMenuRequested.connect(self.fileViewMenu)
 
         # File Action
         self.actionNew.triggered.connect(self.newFile)
         self.actionOpen.triggered.connect(self.openFile)
-        self.actionSave.triggered.connect(
-            lambda: self.saveToFile(self.currentFile))
+        self.actionClearHistory.triggered.connect(lambda:
+                                                  self.db.clearHistory())
+        self.actionClearHistory.triggered.connect(lambda:
+                                                  self.newFile())
+        self.actionSave.triggered.connect(lambda:
+                                          self.saveToFile(self.currentFile))
         self.actionSaveAs.triggered.connect(lambda: self.saveToFile())
         self.actionExport.triggered.connect(self.exportToPDF)
         self.actionExit.triggered.connect(lambda: self.close())
@@ -279,14 +304,30 @@ class EditorMainWindow(QMainWindow):
                                          self.textEditor.editor.cut())
         self.actionPaste.triggered.connect(lambda:
                                            self.textEditor.editor.paste())
+        self.actionUndo.triggered.connect(lambda:
+                                          self.textEditor.editor.redo())
+        self.actionUndo.triggered.connect(lambda:
+                                          self.textEditor.editor.undo())
+        self.actionFormatBold.triggered.connect(lambda:
+                                                self.formatText(self.FORMAT_BOLD))
+        self.actionFormatItalic.triggered.connect(lambda:
+                                                  self.formatText(self.FORMAT_ITALIC))
+        self.actionFormatStroke.triggered.connect(lambda:
+                                                  self.formatText(self.FORMAT_STROKE))
 
         self.actionCopy.setEnabled(False)
         self.actionCut.setEnabled(False)
-        self.textEditor.editor.copyAvailable.connect(lambda x:
-                                                     self.actionCopy.setEnabled(x))
+        self.actionUndo.setEnabled(False)
+        self.actionRedo.setEnabled(False)
 
         self.textEditor.editor.copyAvailable.connect(lambda x:
+                                                     self.actionCopy.setEnabled(x))
+        self.textEditor.editor.copyAvailable.connect(lambda x:
                                                      self.actionCut.setEnabled(x))
+        self.textEditor.editor.undoAvailable.connect(lambda x:
+                                                     self.actionUndo.setEnabled(x))
+        self.textEditor.editor.redoAvailable.connect(lambda x:
+                                                     self.actionRedo.setEnabled(x))
 
         # View Action
         self.actionZoomIn.triggered.connect(lambda:
@@ -298,10 +339,47 @@ class EditorMainWindow(QMainWindow):
         self.actionStyleME.triggered.connect(lambda:
                                              self.setStyleSheet(STYLESHEET))
 
+    def formatText(self, format):
+        cursor = self.textEditor.editor.textCursor()
+        selected = cursor.selectedText()
+
+        if format == self.FORMAT_BOLD:
+            cursor.insertText(f"**{selected}**")
+        elif format == self.FORMAT_ITALIC:
+            cursor.insertText(f"*{selected}*")
+        elif format == self.FORMAT_STROKE:
+            cursor.insertText(f"~~{selected}~~")
+
+        if selected != "":
+            return
+
+        if format == self.FORMAT_ITALIC:
+            cursor.setPosition(cursor.position() - 1)
+        else:
+            cursor.setPosition(cursor.position() - 2)
+        self.textEditor.editor.setTextCursor(cursor)
+
+    def fileViewMenu(self, pos):
+        menu = QMenu()
+
+        action = QAction("Close", menu)
+        action.triggered.connect(self.fileViewClose)
+        action.triggered.connect(lambda: self.newFile())
+
+        if self.currentFile is None:
+            action.setEnabled(False)
+
+        menu.addAction(action)
+        menu.exec_(self.fileViewer.viewport().mapToGlobal(pos))
+
+    def fileViewClose(self):
+        self.db.closeFile(self.currentFile)
+
     def fileSelectedOnView(self, index):
         row = index.row()
         path = self.db.openFileModel.index(row, 1).data()
         if path:
+            self.currentFile = path
             with open(path, "r") as fr:
                 self.openToEditor(fr.read())
 

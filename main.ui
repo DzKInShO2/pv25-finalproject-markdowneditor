@@ -20,7 +20,7 @@
       <property name="orientation">
        <enum>Qt::Horizontal</enum>
       </property>
-	  <widget class="QListView" name="fileViewer"/>
+      <widget class="QListView" name="fileViewer"/>
       <widget class="EditorTextArea" name="textEditor" native="true"/>
       <widget class="QTextBrowser" name="textViewer"/>
      </widget>
@@ -40,18 +40,13 @@
     <property name="title">
      <string>File</string>
     </property>
-    <widget class="QMenu" name="menuOpenRecent">
-     <property name="title">
-      <string>Open Recent</string>
-     </property>
-     <addaction name="actionClear_List"/>
-    </widget>
     <addaction name="actionNew"/>
     <addaction name="actionOpen"/>
-    <addaction name="menuOpenRecent"/>
     <addaction name="separator"/>
     <addaction name="actionSave"/>
     <addaction name="actionSaveAs"/>
+    <addaction name="separator"/>
+    <addaction name="actionClearHistory"/>
     <addaction name="separator"/>
     <addaction name="actionExport"/>
     <addaction name="separator"/>
@@ -68,10 +63,9 @@
     <addaction name="actionCopy"/>
     <addaction name="actionPaste"/>
     <addaction name="separator"/>
-    <addaction name="actionInsertImage"/>
-    <addaction name="separator"/>
-    <addaction name="actionFind"/>
-    <addaction name="actionReplace"/>
+    <addaction name="actionFormatBold"/>
+    <addaction name="actionFormatItalic"/>
+    <addaction name="actionFormatStroke"/>
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
@@ -174,27 +168,6 @@
     <string>Ctrl+V</string>
    </property>
   </action>
-  <action name="actionInsertImage">
-   <property name="text">
-    <string>Insert Image</string>
-   </property>
-  </action>
-  <action name="actionFind">
-   <property name="text">
-    <string>Find</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+F</string>
-   </property>
-  </action>
-  <action name="actionReplace">
-   <property name="text">
-    <string>Replace</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+H</string>
-   </property>
-  </action>
   <action name="actionExit">
    <property name="text">
     <string>Exit</string>
@@ -203,7 +176,7 @@
     <string>Ctrl+Q</string>
    </property>
   </action>
-  <action name="actionClear_List">
+  <action name="actionClearList">
    <property name="text">
     <string>Clear List</string>
    </property>
@@ -232,6 +205,35 @@
   <action name="actionStyleME">
    <property name="text">
     <string>Markdown Editor</string>
+   </property>
+  </action>
+  <action name="actionClearHistory">
+   <property name="text">
+    <string>Clear History</string>
+   </property>
+  </action>
+  <action name="actionFormatBold">
+   <property name="text">
+    <string>Format Bold</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+B</string>
+   </property>
+  </action>
+  <action name="actionFormatItalic">
+   <property name="text">
+    <string>Format Italic</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+I</string>
+   </property>
+  </action>
+  <action name="actionFormatStroke">
+   <property name="text">
+    <string>Format Stroke</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+T</string>
    </property>
   </action>
  </widget>
