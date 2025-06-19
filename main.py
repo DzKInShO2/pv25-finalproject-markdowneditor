@@ -2,14 +2,23 @@ from PyQt5 import uic
 
 from PyQt5.QtCore import (
     Qt,
+    QDir,
     qRound,
+    QDateTime,
     pyqtSignal,
+)
+
+from PyQt5.QtSql import (
+    QSqlQuery,
+    QSqlDatabase,
+    QSqlQueryModel
 )
 
 from PyQt5.QtPrintSupport import QPrinter
 
 from PyQt5.QtGui import (
     QFont,
+    QColor,
     QPainter,
     QPalette,
     QTextDocument
@@ -25,12 +34,18 @@ from PyQt5.QtWidgets import (
     QFileDialog
 )
 
+
+FONT = QFont("Arial, sans-serif")
+FONT.setPointSize(12)
+
 AUTHOR = "~ Dzakanov Inshoofi - F1D02310110 ~"
 
+SUPPORTED_FILES = "Markdown Files (*.md);;Text Files (*.txt);;All Files (*.*)"
+
 STYLESHEET = """
-QMenu, QWidget {
-    background: #1D211B;
+QMenu, QWidget, QMenuBar, QMenuBar:item {
     color: #E1E4DA;
+    background: #191D17;
 }
 
 QMenu {
@@ -47,10 +62,14 @@ QMenuBar:item:selected, QMenu:item:selected {
 }
 
 QSplitter::handle {
-    background-color: #191D17;
-    border: 1px solid #1E4D51;
+    background-color: #1D211B;
+    border: 1px solid #191D17;
     width: 5px;
     height: 5px;
+}
+
+QSplitter::handle:hover {
+    background-color: #10380C;
 }
 
 QPlainTextEdit QScrollBar:handle {
@@ -61,7 +80,91 @@ QPlainTextEdit QScrollBar:handle {
 QPlainTextEdit QScrollBar:handle:hover {
     background: #275021;
 }
+
+QPlainTextEdit, QTextBrowser {
+    background: #1D211B;
+}
 """
+
+
+class EditorHistoryDatabase:
+    SELECT_OPEN_FILE_QUERY = """
+            SELECT name, path FROM File
+            WHERE isInUse = 1
+            ORDER BY lastAccessed
+            DESC
+            """
+
+    def __init__(self, dbName="history"):
+        self.db = QSqlDatabase.addDatabase("QSQLITE")
+        self.db.setDatabaseName(dbName)
+
+        self.db.open()
+
+        QSqlQuery().exec(
+            """
+            CREATE TABLE IF NOT EXISTS File (
+                id INTEGER PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                path TEXT NOT NULL,
+                lastAccessed DATETIME NOT NULL,
+                lastCursorIndex INT NOT NULL,
+                isInUse INT NOT NULL
+            );
+            """
+        )
+
+        self.openFileModel = QSqlQueryModel()
+        self.openFileModel.setQuery(self.SELECT_OPEN_FILE_QUERY)
+
+    def openFile(self, path):
+        now = QDateTime.currentDateTime().toString(Qt.ISODate)
+
+        fileQuery = QSqlQuery(f"SELECT id FROM File WHERE path = {path}")
+        if fileQuery.next():
+            id = fileQuery.value(0)
+            updateQuery = QSqlQuery("""
+                UPDATE File SET
+                lastAccessed = ?,
+                isInUse = 1
+                WHERE id = ?
+                """)
+            updateQuery.addBindValue(now)
+            updateQuery.addBindValue(id)
+            updateQuery.exec()
+        else:
+            insertQuery = QSqlQuery("""
+                INSERT INTO File (name, path, lastAccessed, isInUse)
+                VALUES
+                (?, ?, ?, 1, 1)
+                """)
+            name = path.split("/")
+            name = name[-1]
+            insertQuery.addBindValue(name)
+            insertQuery.addBindValue(path)
+            insertQuery.addBindValue(now)
+            insertQuery.exec()
+
+        self.openFileModel.setQuery(self.SELECT_OPEN_FILE_QUERY)
+
+    def deleteFile(self, path):
+        deleteQuery = QSqlQuery("DELETE FROM File WHERE path = ?")
+        deleteQuery.addBindValue(path)
+        deleteQuery.exec()
+
+    def closeFile(self, path):
+        fileQuery = QSqlQuery(f"SELECT id FROM File WHERE path = {path}")
+        if fileQuery.next():
+            id = fileQuery.value(0)
+            updateQuery = QSqlQuery("""
+                UPDATE File SET
+                isInUse = 0
+                WHERE id = ?
+                """)
+            updateQuery.addBindValue(id)
+            updateQuery.exec()
+
+        self.openFileModel.setQuery(self.SELECT_OPEN_FILE_QUERY)
 
 
 class EditorTextLineNumber(QWidget):
@@ -94,7 +197,7 @@ class EditorTextLineNumber(QWidget):
             if block.isVisible() and bottom >= event.rect().top():
                 number = str(blockNumber + 1)
                 if blockNumber == lineCursor:
-                    p.setPen(Qt.red)
+                    p.setPen(QColor("#FF5449"))
                 else:
                     p.setPen(color)
 
@@ -147,14 +250,29 @@ class EditorTextArea(QWidget):
 class EditorMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.currentFile = None
+        self.db = EditorHistoryDatabase()
 
         uic.loadUi("main.ui", self)
-        self.statusBar().addPermanentWidget(QLabel(AUTHOR))
 
+        self.splitter.setSizes([80, 320, 320])
+
+        self.fileViewer.setModel(self.db.openFileModel)
+        self.statusBar().addPermanentWidget(QLabel(AUTHOR))
         self.textEditor.contentUpdated.connect(self.editorUpdated)
 
+        self.fileViewer.clicked.connect(self.fileSelectedOnView)
+
+        # File Action
+        self.actionNew.triggered.connect(self.newFile)
+        self.actionOpen.triggered.connect(self.openFile)
+        self.actionSave.triggered.connect(
+            lambda: self.saveToFile(self.currentFile))
+        self.actionSaveAs.triggered.connect(lambda: self.saveToFile())
+        self.actionExport.triggered.connect(self.exportToPDF)
         self.actionExit.triggered.connect(lambda: self.close())
 
+        # Edit Action
         self.actionCopy.triggered.connect(lambda:
                                           self.textEditor.editor.copy())
         self.actionCut.triggered.connect(lambda:
@@ -170,21 +288,67 @@ class EditorMainWindow(QMainWindow):
         self.textEditor.editor.copyAvailable.connect(lambda x:
                                                      self.actionCut.setEnabled(x))
 
-        self.actionZoom_In.triggered.connect(lambda:
-                                             self.textEditor.editor.zoomIn(1))
-        self.actionZoom_Out.triggered.connect(lambda:
-                                              self.textEditor.editor.zoomOut(1))
+        # View Action
+        self.actionZoomIn.triggered.connect(lambda:
+                                            self.textEditor.editor.zoomIn(1))
+        self.actionZoomOut.triggered.connect(lambda:
+                                             self.textEditor.editor.zoomOut(1))
+        self.actionStyleDefault.triggered.connect(lambda:
+                                                  self.setStyleSheet(""))
+        self.actionStyleME.triggered.connect(lambda:
+                                             self.setStyleSheet(STYLESHEET))
 
-        self.actionExport.triggered.connect(self.exportToPDF)
+    def fileSelectedOnView(self, index):
+        row = index.row()
+        path = self.db.openFileModel.index(row, 1).data()
+        if path:
+            with open(path, "r") as fr:
+                self.openToEditor(fr.read())
 
     def editorUpdated(self, content: str):
         content = content.replace("\n", "\n\n")
         self.textViewer.document().setMarkdown(content)
 
+    def newFile(self):
+        self.currentFile = None
+        self.textEditor.editor.setPlainText("")
+
+    def openFile(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Open File",
+            QDir.homePath(),
+            SUPPORTED_FILES
+        )
+
+        if filename:
+            self.currentFile = filename
+            self.db.openFile(filename)
+            with open(filename, "r") as fr:
+                content = fr.read()
+                self.openToEditor(content)
+
+    def openToEditor(self, content):
+        self.textEditor.editor.setPlainText(content)
+
+    def saveToFile(self, filename=None):
+        if filename is None:
+            filename, _ = QFileDialog.getSaveFileName(
+                self, "Save As",
+                QDir.homePath(),
+                SUPPORTED_FILES
+            )
+
+            self.currentFile = filename
+            self.db.openFile(filename)
+
+        if filename:
+            with open(filename, "w") as fw:
+                fw.write(self.textEditor.editor.toPlainText())
+
     def exportToPDF(self):
         filename, _ = QFileDialog.getSaveFileName(
             self, "Export to PDF",
-            "output.pdf", "PDF Files (*.pdf)"
+            QDir.homePath(), "PDF Files (*.pdf)"
         )
 
         if filename:
@@ -200,11 +364,8 @@ class EditorMainWindow(QMainWindow):
 if __name__ == "__main__":
     app = QApplication([])
 
-    font = QFont("Arial, sans-serif")
-    font.setPointSize(12)
-
     win = EditorMainWindow()
-    win.setFont(font)
+    win.setFont(FONT)
 
     win.setStyleSheet(STYLESHEET)
     win.show()
