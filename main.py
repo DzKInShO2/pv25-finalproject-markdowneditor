@@ -53,7 +53,6 @@ QMenu, QWidget, QMenuBar, QMenuBar:item, QListView {
 
 QMenu {
     border: 2px solid #272B25;
-    min-width: 198px;
 }
 
 QMenu:item:disabled {
