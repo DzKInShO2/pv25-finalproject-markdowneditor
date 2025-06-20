@@ -200,7 +200,7 @@ class EditorTextLineNumber(QWidget):
         block = self.edit.firstVisibleBlock()
         blockNumber = block.blockNumber()
         top = qRound(self.edit.blockBoundingGeometry(
-            block).translated(self.edit.contentOffset()).top())
+            block).translated(self.edit.contentOffset()).top()) + 5
         bottom = top + qRound(self.edit.blockBoundingRect(block).height())
 
         lineCursor = self.edit.textCursor().blockNumber()
