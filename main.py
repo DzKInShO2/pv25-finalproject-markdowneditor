@@ -415,10 +415,9 @@ class EditorMainWindow(QMainWindow):
                 SUPPORTED_FILES
             )
 
+        if filename:
             self.currentFile = filename
             self.db.openFile(filename)
-
-        if filename:
             with open(filename, "w") as fw:
                 fw.write(self.textEditor.editor.toPlainText())
 
