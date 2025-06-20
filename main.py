@@ -199,8 +199,7 @@ class EditorTextLineNumber(QWidget):
 
         block = self.edit.firstVisibleBlock()
         blockNumber = block.blockNumber()
-        top = qRound(self.edit.blockBoundingGeometry(
-            block).translated(self.edit.contentOffset()).top()) + 5
+        top = qRound(self.edit.blockBoundingGeometry(block).translated(self.edit.contentOffset()).top()) + 5
         bottom = top + qRound(self.edit.blockBoundingRect(block).height())
 
         lineCursor = self.edit.textCursor().blockNumber()
@@ -279,8 +278,7 @@ class EditorMainWindow(QMainWindow):
         # File View Config
         self.fileViewer.setModel(self.db.openFileModel)
         self.fileViewer.clicked.connect(self.fileSelectedOnView)
-        self.fileViewer.setContextMenuPolicy(
-            Qt.ContextMenuPolicy.CustomContextMenu)
+        self.fileViewer.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.fileViewer.customContextMenuRequested.connect(self.fileViewMenu)
 
         # File Action
