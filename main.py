@@ -185,7 +185,7 @@ class EditorTextLineNumber(QWidget):
         super().__init__(parent)
         self.setMinimumWidth(32)
 
-        self.edit: QPlainTextEdit = None
+        self.edit = None
 
     def paintEvent(self, event):
         p = QPainter(self)
